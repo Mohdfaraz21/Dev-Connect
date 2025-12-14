@@ -3,24 +3,92 @@ const connectDB = require("./config/database");
 const app = express();
 const User = require("./models/user");
 const { validateSignUpData } = require("./utils/validation");
+const bcrypt = require("bcrypt");
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
 
 app.use(express.json());
+app.use(cookieParser());
 
+//@SignUp API
 app.post("/signup", async (req, res) => {
   try {
     /* @Validate sign up data */
     validateSignUpData(req);
 
     /* @Encrypt password */
-    
+    const { firstName, lastName, emailId, password } = req.body;
+
+    const HashedPassword = await bcrypt.hash(password, 10);
+    console.log(HashedPassword);
 
     // creating a new instance of the user model
-    const user = new User(req.body);
+    const user = new User({
+      firstName,
+      lastName,
+      emailId,
+      password: HashedPassword,
+    });
 
     await user.save();
     res.send("User Added Successfully!!");
   } catch (err) {
     res.status(400).send("ERROR : " + err.message);
+  }
+});
+
+//@Login API
+app.post("/login", async (req, res) => {
+  try {
+    const { emailId, password } = req.body;
+
+    const user = await User.findOne({ emailId: emailId });
+    if (!user) {
+      throw new Error("Invalid Credentials.");
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (isPasswordValid) {
+      // create a jwt token
+      const token = await jwt.sign({ _id: user._id }, "Dev-Connect@22");
+
+      // Add the token to the cookie and send the response back to the user
+      res.cookie("token", token);
+      res.send("Login Successfull!!");
+    } else {
+      throw new Error("Invalid Credentials.");
+    }
+  } catch (err) {
+    res.status(400).send("ERROR : " + err.message);
+  }
+});
+
+//@profile API
+app.get("/profile", async (req, res) => {
+
+  try {
+    const cookies = req.cookies;
+    
+    const { token } = cookies;
+    
+      if(!token) {
+        throw new Error("Invalid credentials!")
+      }
+
+    // Validate my token
+    const messageDecoded = await jwt.verify(token, "Dev-Connect@22");
+    const { _id } = messageDecoded;
+    console.log("Logged In user id: " + _id);
+    
+    const user = await User.findById(_id);
+    if(!user) {
+      throw new Error("User does not exist.")
+    }
+    
+    res.send(user);
+  } catch (err) {
+    res.status(400).send("ERROR: " + err.message);
   }
 });
 

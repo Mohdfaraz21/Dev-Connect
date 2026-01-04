@@ -15,7 +15,6 @@ authRouter.post("/signup", async (req, res) => {
     const { firstName, lastName, emailId, password } = req.body;
 
     const HashedPassword = await bcrypt.hash(password, 10);
-  
 
     // creating a new instance of the user model
     const user = new User({
@@ -48,7 +47,7 @@ authRouter.post("/login", async (req, res) => {
       const token = await user.getJWT();
       // Add the token to the cookie and send the response back to the user
       res.cookie("token", token, {
-        expires: new Date(Date.now() + 8 * 3600000)
+        expires: new Date(Date.now() + 8 * 3600000),
       });
       res.send("Login Successfull!!");
     } else {
@@ -60,9 +59,11 @@ authRouter.post("/login", async (req, res) => {
 });
 
 //@Logout API
-authRouter.post("/logout", async(req, res) => {
-    
-
+authRouter.post("/logout", async (req, res) => {
+  res.cookie("token", null, {
+    expires: new Date(Date.now()),
+  });
+  res.send("Logout Successfull");
 });
 
 module.exports = authRouter;

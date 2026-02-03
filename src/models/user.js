@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema(
     photoUrl: {
       type: String,
       default:
-        "https://www.pngitem.com/middle/ixJxmw_profile-pic-dummy-png-transparent-png/",
+        "https://www.cleanpng.com/png-motu-patlu-cartoon-elderly-man-with-mustache-and-g-7985901//",
       validate(value) {
         if (!validator.isURL(value)) {
           throw new Error("Invalid photo url: " + value);

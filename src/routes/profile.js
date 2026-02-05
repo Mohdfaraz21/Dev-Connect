@@ -18,6 +18,7 @@ profileRouter.get("/profile/view", userAuth, async (req, res) => {
 //@profileEdit API
 profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
   try {
+    console.log("BODY:", req.body);
     if (!validateEditProfileData(req)) {
       throw new Error("Invalid request.");
     }
@@ -31,7 +32,7 @@ profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
       data: loggedInUser,
     });
   } catch (err) {
-    res.status(400).send("ERROR: " + err.message);
+    res.status(400).send({message: err.message});
   }
 });
 

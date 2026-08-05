@@ -3,7 +3,6 @@ const validator = require("validator");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-
 const userSchema = new mongoose.Schema(
   {
     firstName: {
@@ -44,9 +43,9 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: {
         values: ["male", "female", "other"],
-        message: `{VALUE} is not valid`
+        message: `{VALUE} is not valid`,
       },
-     /*  validate(value) {
+      /*  validate(value) {
         if (!["male", "female", "others"].includes(value)) {
           throw new Error("Gender data is not valid");
         }
@@ -54,8 +53,7 @@ const userSchema = new mongoose.Schema(
     },
     photoUrl: {
       type: String,
-      default:
-        "https://i.pravatar.cc/300",
+      default: "https://i.pravatar.cc/300",
       validate(value) {
         if (!validator.isURL(value)) {
           throw new Error("Invalid photo url: " + value);
@@ -71,13 +69,18 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 userSchema.methods.getJWT = async function () {
   const user = this;
 
-  const token = await jwt.sign({ _id: user._id }, "Dev-Connect@22", {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET is not defined in the environment.");
+  }
+
+  const token = jwt.sign({ _id: user._id }, secret, {
     expiresIn: "1d",
   });
   return token;
@@ -89,15 +92,13 @@ userSchema.methods.validatePassword = async function (passwordInputByUser) {
 
   const isPasswordValid = await bcrypt.compare(
     passwordInputByUser,
-    HashedPassword
+    HashedPassword,
   );
   return isPasswordValid;
 };
 
-userSchema.methods.comparePassword = function(password) {
+userSchema.methods.comparePassword = function (password) {
   return bcrypt.compare(password, this.password);
-
-}
-
+};
 
 module.exports = mongoose.model("User", userSchema);

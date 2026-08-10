@@ -51,15 +51,22 @@ userRouter.get("/user/connections", userAuth, async (req, res) => {
   }
 });
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 userRouter.get("/feed", userAuth, async (req, res) => {
   try {
     const loggedInUser = req.user;
-
-
     const page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 10;
     limit = limit > 50 ? 50 : limit;
-    const skip = (page - 1) * limit; 
+    const skip = (page - 1) * limit;
+
+    const rawSkills = req.query.skill || req.query.skills || "";
+    const requestedSkills = rawSkills
+      .toString()
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter(Boolean);
 
     const connectionRequests = await ConnectionRequest.find({
       $or: [{ fromUserId: loggedInUser._id }, { toUserId: loggedInUser._id }],
@@ -71,14 +78,28 @@ userRouter.get("/feed", userAuth, async (req, res) => {
       hideUsersFromFeed.add(req.toUserId.toString());
     });
 
-    const users = await User.find({
-      $and: [
-        { _id: { $nin: Array.from(hideUsersFromFeed) } },
-        {
-          _id: { $ne: loggedInUser._id },
+    const feedFilters = [
+      { _id: { $nin: Array.from(hideUsersFromFeed) } },
+      { _id: { $ne: loggedInUser._id } },
+    ];
+
+    if (requestedSkills.length) {
+      const safePattern = requestedSkills
+        .map((skill) => escapeRegExp(skill))
+        .join("|");
+      feedFilters.push({
+        skills: {
+          $elemMatch: { $regex: new RegExp(`^(${safePattern})$`, "i") },
         },
-      ],
-    }).select(USER_SAFE_DATA).skip(skip).limit(limit);
+      });
+    }
+
+    const users = await User.find({
+      $and: feedFilters,
+    })
+      .select(USER_SAFE_DATA)
+      .skip(skip)
+      .limit(limit);
 
     res.json({ data: users });
   } catch (err) {

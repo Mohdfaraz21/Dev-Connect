@@ -9,7 +9,7 @@ const bcrypt = require("bcrypt");
 profileRouter.get("/profile/view", userAuth, async (req, res) => {
   try {
     const user = req.user;
-    res.send(user);
+    res.json({ data: user.toJSON() });
   } catch (err) {
     res.status(400).send("ERROR: " + err.message);
   }
@@ -29,15 +29,15 @@ profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
 
     res.json({
       message: `${loggedInUser.firstName}, your profile updated successfully`,
-      data: loggedInUser,
+      data: loggedInUser.toJSON(),
     });
   } catch (err) {
-    res.status(400).send({message: err.message});
+    res.status(400).send({ message: err.message });
   }
 });
 
 //@Change Password API
-profileRouter.patch("/profile/changePassword",userAuth, async (req, res) => {
+profileRouter.patch("/profile/changePassword", userAuth, async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
     const loggedInUser = req.user;

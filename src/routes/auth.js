@@ -1,9 +1,11 @@
 const express = require("express");
+const crypto = require("crypto");
 const authRouter = express.Router();
 
 const { validateSignUpData } = require("../utils/validation");
 const User = require("../models/user");
 const bcrypt = require("bcrypt");
+const { sendEmail } = require("../utils/email");
 
 //@SignUp API
 authRouter.post("/signup", async (req, res) => {
@@ -73,6 +75,85 @@ authRouter.post("/logout", async (req, res) => {
     expires: new Date(Date.now()),
   });
   res.send("Logout Successfull");
+});
+
+//@Forgot Password API
+authRouter.post("/auth/forgot-password", async (req, res) => {
+  try {
+    const { emailId } = req.body;
+
+    if (!emailId) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ emailId });
+    if (!user) {
+      return res.status(404).json({ message: "User with this email does not exist" });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetPasswordExpires = Date.now() + 10 * 60 * 1000;
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = resetPasswordExpires;
+    await user.save();
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+        <h2 style="color: #6366f1;">Reset Your Password</h2>
+        <p>Hi ${user.firstName},</p>
+        <p>You requested to reset your password. Click the button below to set a new password:</p>
+        <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 8px; margin: 20px 0;">Reset Password</a>
+        <p style="color: #666; font-size: 14px;">This link will expire in 10 minutes.</p>
+        <p style="color: #666; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+      </div>
+    `;
+
+    const emailSent = await sendEmail({
+      to: user.emailId,
+      subject: "DevConnect - Reset Your Password",
+      html,
+    });
+
+    if (emailSent) {
+      res.json({ message: "Password reset email sent successfully" });
+    } else {
+      res.status(500).json({ message: "Failed to send email. Please try again later." });
+    }
+  } catch (err) {
+    res.status(400).send("ERROR: " + err.message);
+  }
+});
+
+//@Reset Password API
+authRouter.post("/auth/reset-password/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ message: "New password is required" });
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired reset token" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: "Password reset successful" });
+  } catch (err) {
+    res.status(400).send("ERROR: " + err.message);
+  }
 });
 
 module.exports = authRouter;

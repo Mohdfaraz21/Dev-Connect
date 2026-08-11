@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const connectDB = require("./config/database");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const { sendEmail } = require("./utils/email");
 const app = express();
 
 app.use(
@@ -38,16 +39,65 @@ app.post(
       const payload = event.payload.payment.entity;
 
       const Payment = require("./models/payment");
+      const User = require("./models/user");
 
       if (eventType === "payment.captured") {
-        await Payment.findOneAndUpdate(
+        const updatedPayment = await Payment.findOneAndUpdate(
           { razorpayOrderId: payload.order_id, status: { $nin: ["completed", "refunded"] } },
           {
             status: "completed",
             razorpayPaymentId: payload.id,
             paymentMethod: payload.method,
-          }
+          },
+          { new: true }
         );
+
+        if (updatedPayment) {
+          const user = await User.findById(updatedPayment.userId);
+          if (user) {
+            const receiptHtml = `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+                <h2 style="color: #6366f1;">Payment Receipt - DevConnect</h2>
+                <p>Hi ${user.firstName},</p>
+                <p>Thank you for your payment! Here are your transaction details:</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                  <tr style="background: #f3f4f6;">
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Plan</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;">${updatedPayment.planName || "Premium"}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Amount</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;">₹${updatedPayment.amount}</td>
+                  </tr>
+                  <tr style="background: #f3f4f6;">
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Transaction ID</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;">${updatedPayment.razorpayPaymentId}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Payment Method</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;">${updatedPayment.paymentMethod || "Online"}</td>
+                  </tr>
+                  <tr style="background: #f3f4f6;">
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Date</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;">${new Date(updatedPayment.createdAt).toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Status</strong></td>
+                    <td style="padding: 10px; border: 1px solid #e5e7eb; color: #16a34a; font-weight: bold;">Completed</td>
+                  </tr>
+                </table>
+                <p>Your premium features are now active!</p>
+                <p style="color: #666; font-size: 14px;">If you have any questions, reply to this email.</p>
+              </div>
+            `;
+
+            sendEmail({
+              to: user.emailId,
+              subject: "DevConnect - Payment Receipt",
+              html: receiptHtml,
+            }).catch((err) => console.error("Payment receipt email failed:", err));
+          }
+        }
       } else if (eventType === "payment.failed") {
         await Payment.findOneAndUpdate(
           { razorpayOrderId: payload.order_id, status: { $nin: ["completed", "refunded"] } },

@@ -1,24 +1,27 @@
 # DevConnect
 
-A full-stack developer networking platform inspired by Tinder — connect with other developers, send connection requests, and upgrade to premium plans with Razorpay integration.
+A full-stack developer networking platform inspired by Tinder — connect with other developers, send connection requests, chat in real-time, and upgrade to premium plans with Razorpay integration.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | **Frontend** | React 19, Redux Toolkit, React Router DOM 7, Tailwind CSS, DaisyUI, Vite, Axios |
-| **Backend** | Node.js, Express 5, Mongoose, JWT, Bcrypt, Cookie Parser, CORS |
+| **Backend** | Node.js, Express 5, Mongoose, JWT, Bcrypt, Cookie Parser, CORS, Nodemailer, Multer |
 | **Database** | MongoDB (Mongoose ODM) |
 | **Payments** | Razorpay |
+| **Email** | Nodemailer (Gmail SMTP) |
 
 ## Features
 
-- **Authentication** — Sign up, login, logout with JWT stored in HTTP-only cookies
+- **Authentication** — Sign up, login, logout, forgot password with email reset link
 - **Feed** — Discover other developers with skill-based filtering
 - **Connection Requests** — Send interest / ignore requests, accept or reject incoming requests
-- **Profile** — View and edit your profile, change password
+- **Profile** — View and edit profile, upload profile photo, change password
+- **Chat** — Real-time messaging with connections, conversation list, message history
 - **Premium Plans** — Silver (₹299/mo) and Gold (₹499/mo) with Razorpay checkout
 - **Payment History** — View all past transactions
+- **Email Receipts** — Payment confirmation emails sent after successful transactions
 - **Webhooks** — Razorpay webhook handler for payment status updates and refunds
 
 ## Project Structure
@@ -30,23 +33,28 @@ DevConnect-backend/
 │   ├── config/
 │   │   └── database.js           # MongoDB connection helper
 │   ├── middlewares/
-│   │   └── auth.js               # JWT cookie-based authentication
+│   │   ├── auth.js               # JWT cookie-based authentication
+│   │   └── upload.js             # Multer file upload middleware
 │   ├── models/
 │   │   ├── user.js               # User schema
 │   │   ├── payment.js            # Payment schema
-│   │   └── connectionRequest.js  # Connection request schema
+│   │   ├── connectionRequest.js  # Connection request schema
+│   │   └── message.js            # Message schema
 │   ├── routes/
-│   │   ├── auth.js               # Signup, login, logout
-│   │   ├── profile.js            # View/edit profile, change password
+│   │   ├── auth.js               # Signup, login, logout, forgot/reset password
+│   │   ├── profile.js            # View/edit profile, upload photo, change password
 │   │   ├── request.js            # Send/review connection requests
-│   │   ├── user.js               # Feed, connections, requests
-│   │   └── payment.js            # Payment order, verify, history, plans
+│   │   ├── user.js               # Feed, connections, requests, user profile
+│   │   ├── payment.js            # Payment order, verify, history, plans
+│   │   └── chat.js               # Send message, get messages, conversations
 │   └── utils/
-│       ├── validation.js         # Signup + profile validators
-│       └── razorpay.js           # Razorpay SDK instance
-├── .env                          # Environment variables
-├── .env.example                  # Environment template
-└── package.json
+│   │   ├── validation.js         # Signup + profile validators
+│   │   ├── razorpay.js           # Razorpay SDK instance
+│   │   └── email.js              # Nodemailer email service
+│   ├── public/
+│   │   └── uploads/              # Uploaded profile photos
+│   ├── .env                      # Environment variables
+│   └── package.json
 
 DevConnect-web/
 ├── src/
@@ -54,18 +62,24 @@ DevConnect-web/
 │   ├── main.jsx                  # React entry point
 │   ├── components/
 │   │   ├── Body.jsx              # Authenticated layout wrapper
-│   │   ├── NavBar.jsx            # Navigation bar
+│   │   ├── NavBar.jsx            # Navigation bar with premium crown icon
 │   │   ├── Footer.jsx            # Footer
 │   │   ├── Login.jsx             # Login / Signup form
+│   │   ├── ForgotPassword.jsx    # Forgot password form
+│   │   ├── ResetPassword.jsx     # Reset password form
 │   │   ├── Feed.jsx              # People you may know
 │   │   ├── Profile.jsx           # Profile wrapper
-│   │   ├── EditProfile.jsx       # Edit profile form
-│   │   ├── Connections.jsx       # Connections list
+│   │   ├── EditProfile.jsx       # Edit profile with photo upload
+│   │   ├── Connections.jsx       # Connections list with chat buttons
 │   │   ├── Requests.jsx          # Incoming requests
 │   │   ├── UserCard.jsx          # Reusable user card
 │   │   ├── Premium.jsx           # Premium plans with Razorpay checkout
 │   │   ├── PaymentSuccess.jsx    # Payment success page
-│   │   └── PaymentFailure.jsx    # Payment failure page
+│   │   ├── PaymentFailure.jsx    # Payment failure page
+│   │   ├── Chat.jsx              # Main chat layout
+│   │   ├── ChatList.jsx          # Conversations sidebar
+│   │   ├── ChatWindow.jsx        # Message view with date grouping
+│   │   └── MessageInput.jsx      # Message input with auto-expand
 │   └── utils/
 │       ├── constants.js          # BASE_URL from env
 │       ├── apiClient.js          # Axios instance with 401 interceptor
@@ -74,7 +88,8 @@ DevConnect-web/
 │       ├── feedSlice.js          # Feed state
 │       ├── connectionSlice.js    # Connections state
 │       ├── requestSlice.js       # Requests state
-│       └── paymentService.js     # Payment API calls
+│       ├── paymentService.js     # Payment API calls
+│       └── chatService.js        # Chat API calls
 ├── .env                          # Frontend env vars
 ├── vite.config.js
 ├── tailwind.config.js
@@ -88,6 +103,7 @@ DevConnect-web/
 - Node.js (v16+)
 - MongoDB
 - Razorpay account (test mode is fine)
+- Gmail account with App Password (for emails)
 
 ### 1. Clone the repository
 
@@ -112,6 +128,10 @@ JWT_SECRET=your_jwt_secret_key
 RAZORPAY_KEY_ID=rzp_test_YOUR_KEY_ID
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 RAZORPAY_WEBHOOK_SECRET=your_razorpay_webhook_secret
+EMAIL_USER=your_email@gmail.com
+EMAIL_APP_PASSWORD=your_gmail_app_password
+EMAIL_FROM="DevConnect" <your_email@gmail.com>
+FRONTEND_URL=http://localhost:5173
 ```
 
 Start the backend server:
@@ -160,13 +180,16 @@ In your Razorpay Dashboard:
 | POST | `/signup` | Register new user |
 | POST | `/login` | Login user |
 | POST | `/logout` | Logout user |
+| POST | `/auth/forgot-password` | Send password reset email |
+| POST | `/auth/reset-password/:token` | Reset password with token |
 
 ### Profile
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/profile/view` | View own profile |
 | PATCH | `/profile/edit` | Edit profile |
-| PATCH | `/profile/password` | Change password |
+| PATCH | `/profile/changePassword` | Change password |
+| POST | `/profile/upload-photo` | Upload profile photo (multipart/form-data) |
 
 ### Connection Requests
 | Method | Endpoint | Description |
@@ -179,9 +202,17 @@ In your Razorpay Dashboard:
 ### Users
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/user/feed` | Get feed suggestions |
+| GET | `/feed` | Get feed suggestions |
 | GET | `/user/connections` | Get connections |
 | GET | `/user/requests` | Get received requests |
+| GET | `/user/profile/:userId` | Get user profile by ID |
+
+### Chat
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/chat/send` | Send a message |
+| GET | `/chat/messages/:userId` | Get chat history with a user |
+| GET | `/chat/conversations` | List all conversations |
 
 ### Payments
 | Method | Endpoint | Description |
@@ -246,6 +277,10 @@ curl -X POST http://localhost:3000/signup \
 | `RAZORPAY_KEY_ID` | Razorpay test/live key ID |
 | `RAZORPAY_KEY_SECRET` | Razorpay test/live key secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret for signature verification |
+| `EMAIL_USER` | Gmail address for sending emails |
+| `EMAIL_APP_PASSWORD` | Gmail app password (not regular password) |
+| `EMAIL_FROM` | From name and email for outgoing emails |
+| `FRONTEND_URL` | Frontend URL for password reset links |
 
 ### Frontend (.env)
 | Variable | Description |
@@ -273,8 +308,15 @@ npm run preview # Preview production build
 
 ### User
 - `firstName`, `lastName`, `emailId`, `password`, `age`, `gender`, `photoUrl`, `about`, `skills`
+- `resetPasswordToken`, `resetPasswordExpires` — for password reset flow
 - Timestamps enabled
 - Password hashed with bcrypt
+
+### Message
+- `senderId`, `receiverId` — references to User
+- `message` — text content
+- Index on `{ senderId, receiverId, createdAt }` for fast chat history queries
+- Timestamps enabled
 
 ### Payment
 - `userId`, `amount`, `currency`, `status`, `paymentGateway`
@@ -287,6 +329,69 @@ npm run preview # Preview production build
 - `fromUserId`, `toUserId`, `status` (interested/ignored/accepted/rejected)
 - Timestamps enabled
 - Compound unique index on `{ fromUserId, toUserId }`
+
+## Chat Feature Architecture
+
+### Flow
+```
+User clicks Chat on a connection
+  ↓
+Frontend navigates to /chat/:userId
+  ↓
+Chat component reads userId from URL params
+  ↓
+Fetches selected user's profile via GET /user/profile/:userId
+  ↓
+Displays ChatWindow with message history
+  ↓
+User sends message → POST /chat/send
+  ↓
+Backend saves message to MongoDB
+  ↓
+Frontend appends message to local state
+  ↓
+WebSocket/polling can be added for real-time updates
+```
+
+### Components
+- **ChatList** — Shows all conversations with last message and timestamp
+- **ChatWindow** — Displays message bubbles grouped by date, with sender avatars
+- **MessageInput** — Auto-expanding textarea, Enter to send, Shift+Enter for new line
+
+### Current Limitations
+- No real-time messaging (requires Socket.io or polling)
+- No typing indicators
+- No online/offline status
+- No message read receipts
+- No file attachments in chat
+
+## Payment Flow Architecture
+
+### Step-by-Step
+```
+1. User clicks "Buy" on Premium page
+2. Frontend loads Razorpay Checkout SDK dynamically
+3. Frontend calls POST /payment/create with plan details
+4. Backend validates plan and amount, creates Razorpay order
+5. Backend saves Payment record (status: pending) with razorpayOrderId
+6. Frontend opens Razorpay Checkout modal with order details
+7. User enters card details and pays
+8. Razorpay processes payment and returns signature to frontend
+9. Frontend calls POST /payment/verify with signature details
+10. Backend verifies HMAC-SHA256 signature
+11. Backend updates payment status to "completed"
+12. Frontend navigates to success/failure page
+13. Razorpay sends webhook to backend (source of truth)
+14. Backend verifies webhook signature and updates payment idempotently
+15. Backend sends payment receipt email to user
+```
+
+### Security
+- Server-side plan/amount validation prevents tampering
+- HMAC-SHA256 signature verification on both verify endpoint and webhook
+- Order ID mismatch check prevents cross-order tampering
+- JWT authentication on all protected endpoints
+- Conditional webhook updates prevent race conditions
 
 ## License
 

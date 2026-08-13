@@ -1,6 +1,6 @@
 # DevConnect
 
-A full-stack developer networking platform inspired by Tinder — connect with other developers, send connection requests, chat in real-time, and upgrade to premium plans with Razorpay integration.
+A full-stack developer networking platform inspired by Tinder — connect with other developers, send connection requests, chat in real-time with Socket.io, and upgrade to premium plans with Razorpay integration.
 
 ## Tech Stack
 
@@ -8,6 +8,7 @@ A full-stack developer networking platform inspired by Tinder — connect with o
 |---|---|
 | **Frontend** | React 19, Redux Toolkit, React Router DOM 7, Tailwind CSS, DaisyUI, Vite, Axios |
 | **Backend** | Node.js, Express 5, Mongoose, JWT, Bcrypt, Cookie Parser, CORS, Nodemailer, Multer |
+| **Real-time** | Socket.io |
 | **Database** | MongoDB (Mongoose ODM) |
 | **Payments** | Razorpay |
 | **Email** | Nodemailer (Gmail SMTP) |
@@ -18,7 +19,7 @@ A full-stack developer networking platform inspired by Tinder — connect with o
 - **Feed** — Discover other developers with skill-based filtering
 - **Connection Requests** — Send interest / ignore requests, accept or reject incoming requests
 - **Profile** — View and edit profile, upload profile photo, change password
-- **Chat** — Real-time messaging with connections, conversation list, message history
+- **Real-time Chat** — Instant messaging with Socket.io, typing indicators, online status, read receipts
 - **Premium Plans** — Silver (₹299/mo) and Gold (₹499/mo) with Razorpay checkout
 - **Payment History** — View all past transactions
 - **Email Receipts** — Payment confirmation emails sent after successful transactions
@@ -29,7 +30,7 @@ A full-stack developer networking platform inspired by Tinder — connect with o
 ```
 DevConnect-backend/
 ├── src/
-│   ├── app.js                    # Express app, CORS, webhook, route registration
+│   ├── app.js                    # Express app, CORS, webhook, Socket.io server
 │   ├── config/
 │   │   └── database.js           # MongoDB connection helper
 │   ├── middlewares/
@@ -46,7 +47,7 @@ DevConnect-backend/
 │   │   ├── request.js            # Send/review connection requests
 │   │   ├── user.js               # Feed, connections, requests, user profile
 │   │   ├── payment.js            # Payment order, verify, history, plans
-│   │   └── chat.js               # Send message, get messages, conversations
+│   │   └── chat.js               # Send message, get messages, conversations, mark read
 │   └── utils/
 │   │   ├── validation.js         # Signup + profile validators
 │   │   ├── razorpay.js           # Razorpay SDK instance
@@ -72,14 +73,14 @@ DevConnect-web/
 │   │   ├── EditProfile.jsx       # Edit profile with photo upload
 │   │   ├── Connections.jsx       # Connections list with chat buttons
 │   │   ├── Requests.jsx          # Incoming requests
-│   │   ├── UserCard.jsx          # Reusable user card
+│   │   ├── UserCard.jsx          # Reusable user card with chat button
 │   │   ├── Premium.jsx           # Premium plans with Razorpay checkout
 │   │   ├── PaymentSuccess.jsx    # Payment success page
 │   │   ├── PaymentFailure.jsx    # Payment failure page
-│   │   ├── Chat.jsx              # Main chat layout
-│   │   ├── ChatList.jsx          # Conversations sidebar
-│   │   ├── ChatWindow.jsx        # Message view with date grouping
-│   │   └── MessageInput.jsx      # Message input with auto-expand
+│   │   ├── Chat.jsx              # Main chat layout with Socket.io
+│   │   ├── ChatList.jsx          # Conversations sidebar with online status
+│   │   ├── ChatWindow.jsx        # Message view with real-time updates, typing, read receipts
+│   │   └── MessageInput.jsx      # Message input with typing indicator
 │   └── utils/
 │       ├── constants.js          # BASE_URL from env
 │       ├── apiClient.js          # Axios instance with 401 interceptor
@@ -89,7 +90,8 @@ DevConnect-web/
 │       ├── connectionSlice.js    # Connections state
 │       ├── requestSlice.js       # Requests state
 │       ├── paymentService.js     # Payment API calls
-│       └── chatService.js        # Chat API calls
+│       ├── chatService.js        # Chat API calls
+│       └── socket.js             # Socket.io client singleton
 ├── .env                          # Frontend env vars
 ├── vite.config.js
 ├── tailwind.config.js
@@ -213,6 +215,7 @@ In your Razorpay Dashboard:
 | POST | `/chat/send` | Send a message |
 | GET | `/chat/messages/:userId` | Get chat history with a user |
 | GET | `/chat/conversations` | List all conversations |
+| PATCH | `/chat/read` | Mark messages as read |
 
 ### Payments
 | Method | Endpoint | Description |
@@ -315,6 +318,8 @@ npm run preview # Preview production build
 ### Message
 - `senderId`, `receiverId` — references to User
 - `message` — text content
+- `readBy` — array of user IDs who have read the message
+- `readAt` — timestamp when message was read
 - Index on `{ senderId, receiverId, createdAt }` for fast chat history queries
 - Timestamps enabled
 
@@ -330,40 +335,53 @@ npm run preview # Preview production build
 - Timestamps enabled
 - Compound unique index on `{ fromUserId, toUserId }`
 
-## Chat Feature Architecture
+## Real-time Chat Architecture
 
-### Flow
+### Socket.io Flow
 ```
-User clicks Chat on a connection
-  ↓
-Frontend navigates to /chat/:userId
-  ↓
-Chat component reads userId from URL params
-  ↓
-Fetches selected user's profile via GET /user/profile/:userId
-  ↓
-Displays ChatWindow with message history
-  ↓
-User sends message → POST /chat/send
-  ↓
-Backend saves message to MongoDB
-  ↓
-Frontend appends message to local state
-  ↓
-WebSocket/polling can be added for real-time updates
+Frontend (React)                 Backend (Node.js)
+     │                               │
+     │  1. Connect via WS + JWT      │
+     ├──────────────────────────────►│
+     │  2. Verify JWT                │
+     │  3. Join user room            │
+     │  4. Broadcast onlineUsers     │
+     │◄──────────────────────────────│
+     │                               │
+     │  5. Emit sendMessage          │
+     ├──────────────────────────────►│
+     │  6. Save to MongoDB           │
+     │  7. Emit to sender + receiver │
+     │◄──────────────────────────────│
+     │  8. UI updates instantly      │
 ```
 
-### Components
-- **ChatList** — Shows all conversations with last message and timestamp
-- **ChatWindow** — Displays message bubbles grouped by date, with sender avatars
-- **MessageInput** — Auto-expanding textarea, Enter to send, Shift+Enter for new line
+### Socket Events
 
-### Current Limitations
-- No real-time messaging (requires Socket.io or polling)
-- No typing indicators
-- No online/offline status
-- No message read receipts
-- No file attachments in chat
+| Event | Direction | Purpose |
+|---|---|---|
+| `sendMessage` | Client → Server | Send a new message |
+| `receiveMessage` | Server → Client | Receive a new message instantly |
+| `typing` | Client → Server | Notify that user is typing |
+| `stopTyping` | Client → Server | Notify that user stopped typing |
+| `markAsRead` | Client → Server | Mark messages as read |
+| `messagesRead` | Server → Client | Notify sender that messages were read |
+| `onlineUsers` | Server → Client | Broadcast list of online user IDs |
+| `disconnect` | Server → Client | User went offline |
+
+### Real-time Features
+
+1. **Instant messaging** — Messages appear instantly without page refresh
+2. **Typing indicator** — Shows "typing..." when the other user is typing (2s debounce)
+3. **Online/offline status** — Green dot on avatars, `onlineUsers` event updates on connect/disconnect
+4. **Read receipts** — "Sent" for delivered messages, "Read" when receiver opens the chat
+5. **Room-based delivery** — Each user joins their own room, messages targeted via `socket.to(receiverId).emit()`
+
+### Chat Components
+
+- **ChatList** — Conversations sidebar with last message, timestamp, online status indicator
+- **ChatWindow** — Message bubbles grouped by date, sender avatars, read receipts, typing status in header
+- **MessageInput** — Auto-expanding textarea, Enter to send, typing indicator with debounce
 
 ## Payment Flow Architecture
 
@@ -392,6 +410,7 @@ WebSocket/polling can be added for real-time updates
 - Order ID mismatch check prevents cross-order tampering
 - JWT authentication on all protected endpoints
 - Conditional webhook updates prevent race conditions
+- Socket.io connections authenticated via JWT handshake
 
 ## License
 

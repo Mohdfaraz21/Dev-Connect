@@ -124,6 +124,7 @@ app.post(
 
 app.use(express.json());
 app.use(cookieParser());
+app.use("/uploads", express.static(path.join(__dirname, "../public/uploads")));
 
 const authRouter = require("./routes/auth");
 const profileRouter = require("./routes/profile");

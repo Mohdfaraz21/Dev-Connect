@@ -4,6 +4,7 @@ const { userAuth } = require("../middlewares/auth");
 const { validateEditProfileData } = require("../utils/validation");
 const user = require("../models/user");
 const bcrypt = require("bcrypt");
+const upload = require("../middlewares/upload");
 
 //@profile API
 profileRouter.get("/profile/view", userAuth, async (req, res) => {
@@ -62,5 +63,31 @@ profileRouter.patch("/profile/changePassword", userAuth, async (req, res) => {
     res.status(400).send("ERROR: " + err.message);
   }
 });
+
+profileRouter.post(
+  "/profile/upload-photo",
+  userAuth,
+  upload.single("photo"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const photoUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+
+      const loggedInUser = req.user;
+      loggedInUser.photoUrl = photoUrl;
+      await loggedInUser.save();
+
+      res.json({
+        message: "Photo uploaded successfully",
+        data: loggedInUser.toJSON(),
+      });
+    } catch (err) {
+      res.status(400).send("ERROR: " + err.message);
+    }
+  }
+);
 
 module.exports = profileRouter;

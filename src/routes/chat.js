@@ -12,8 +12,12 @@ chatRouter.post(
       const { receiverId, message } = req.body;
       const senderId = req.user._id;
 
-      if (!receiverId || !message || message.trim().length === 0) {
-        return res.status(400).json({ message: "Receiver and message are required" });
+      if (!receiverId) {
+        return res.status(400).json({ message: "Receiver ID is required" });
+      }
+
+      if (!message || message.trim().length === 0) {
+        return res.status(400).json({ message: "Message cannot be empty" });
       }
 
       const newMessage = new Message({

@@ -106,6 +106,7 @@ chatRouter.get(
             _id: 1,
             lastMessage: 1,
             lastMessageAt: 1,
+            "user._id": 1,
             "user.firstName": 1,
             "user.lastName": 1,
             "user.photoUrl": 1,
@@ -114,6 +115,33 @@ chatRouter.get(
       ]);
 
       res.json({ message: "Conversations fetched", data: conversations });
+    } catch (err) {
+      res.status(400).send("ERROR: " + err.message);
+    }
+  }
+);
+
+chatRouter.patch(
+  "/chat/read",
+  userAuth,
+  async (req, res) => {
+    try {
+      const { senderId } = req.body;
+      const receiverId = req.user._id;
+
+      if (!senderId) {
+        return res.status(400).json({ message: "Sender ID is required" });
+      }
+
+      await Message.updateMany(
+        { senderId, receiverId, readBy: { $ne: receiverId.toString() } },
+        {
+          $addToSet: { readBy: receiverId.toString() },
+          $set: { readAt: new Date() },
+        }
+      );
+
+      res.json({ message: "Messages marked as read" });
     } catch (err) {
       res.status(400).send("ERROR: " + err.message);
     }

@@ -5,7 +5,12 @@ const crypto = require("crypto");
 const connectDB = require("./config/database");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const { createServer } = require("http");
+const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
 const { sendEmail } = require("./utils/email");
+const User = require("./models/user");
+const Message = require("./models/message");
 const app = express();
 
 app.use(
@@ -154,7 +159,115 @@ app.use((err, req, res, next) => {
 connectDB()
   .then(() => {
     console.log("Database connection established....");
-    app.listen(3000, () => {
+
+    const httpServer = createServer(app);
+    const io = new Server(httpServer, {
+      cors: {
+        origin: "http://localhost:5173",
+        credentials: true,
+      },
+    });
+
+    const onlineUsers = new Map();
+
+    io.use(async (socket, next) => {
+      try {
+        const token = socket.handshake.auth.token;
+        if (!token) {
+          return next(new Error("Authentication error"));
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded._id);
+        if (!user) {
+          return next(new Error("Authentication error"));
+        }
+        socket.user = user;
+        next();
+      } catch (err) {
+        next(new Error("Authentication error"));
+      }
+    });
+
+    io.on("connection", (socket) => {
+      const userId = socket.user._id.toString();
+      onlineUsers.set(userId, socket.id);
+      socket.join(userId);
+
+      io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+
+      socket.on("sendMessage", async (data) => {
+        try {
+          const { receiverId, message } = data;
+          if (!receiverId || !message || message.trim().length === 0) {
+            return;
+          }
+
+          const newMessage = new Message({
+            senderId: socket.user._id,
+            receiverId,
+            message: message.trim(),
+          });
+          await newMessage.save();
+
+          const messagePayload = {
+            _id: newMessage._id,
+            senderId: socket.user._id,
+            receiverId,
+            message: newMessage.message,
+            createdAt: newMessage.createdAt,
+          };
+
+          socket.to(receiverId).emit("receiveMessage", messagePayload);
+          socket.emit("receiveMessage", messagePayload);
+        } catch (err) {
+          console.error("Socket sendMessage error:", err);
+        }
+      });
+
+      socket.on("typing", (receiverId) => {
+        socket.to(receiverId).emit("typing", { userId: socket.user._id.toString() });
+      });
+
+      socket.on("stopTyping", (receiverId) => {
+        socket.to(receiverId).emit("stopTyping", { userId: socket.user._id.toString() });
+      });
+
+      socket.on("markAsRead", async (data) => {
+        try {
+          const { senderId } = data;
+          await Message.updateMany(
+            {
+              senderId,
+              receiverId: socket.user._id,
+              readBy: { $ne: socket.user._id.toString() },
+            },
+            {
+              $addToSet: { readBy: socket.user._id.toString() },
+              $set: { readAt: new Date() },
+            }
+          );
+
+          const messages = await Message.find({
+            senderId,
+            receiverId: socket.user._id,
+          }).select("_id readBy readAt");
+
+          io.to(senderId).emit("messagesRead", {
+            readerId: socket.user._id.toString(),
+            messages,
+          });
+        } catch (err) {
+          console.error("Socket markAsRead error:", err);
+        }
+      });
+
+      socket.on("disconnect", () => {
+        onlineUsers.delete(userId);
+        io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+      });
+    });
+
+    httpServer.listen(3000, () => {
       console.log("Server is successfully listening on port 3000!!..");
     });
   })

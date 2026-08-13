@@ -17,6 +17,13 @@ const messageSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    readBy: {
+      type: [String],
+      default: [],
+    },
+    readAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
